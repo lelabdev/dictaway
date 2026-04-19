@@ -23,6 +23,10 @@ struct Cli {
     /// Force stop
     #[arg(long)]
     stop: bool,
+
+    /// Whisper model path
+    #[arg(long)]
+    model: Option<String>,
 }
 
 fn main() {
@@ -36,7 +40,7 @@ fn main() {
     if is_running() {
         force_stop();
     } else {
-        run();
+        run(cli.model);
     }
 }
 
@@ -54,12 +58,13 @@ fn force_stop() {
     println!("🛑 Stopping...");
 }
 
-fn run() {
+fn run(model_override: Option<String>) {
     let _ = fs::remove_file(STOP_FILE);
     let _ = fs::write(PID_FILE, process::id().to_string());
 
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let model_path = format!("{}/.local/share/whisper.cpp/models/ggml-base.bin", home);
+    let default_model = format!("{}/.local/share/whisper.cpp/models/ggml-small.bin", home);
+    let model_path = model_override.unwrap_or(default_model);
 
     println!("🎤 Loading model...");
     let transcriber = match transcriber::Transcriber::new(&model_path) {
@@ -136,6 +141,6 @@ fn cleanup() {
 }
 
 fn clean_whisper_text(text: &str) -> String {
-    let re = regex::Regex::new(r"\*[^*]+\*|\[[^\]]+\]").unwrap();
+    let re = regex::Regex::new(r"\*[^*]+\*|\[[^\]]+\]|\.{2,}|…").unwrap();
     re.replace_all(text, "").trim().to_string()
 }
