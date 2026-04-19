@@ -70,6 +70,16 @@ impl AudioCapture {
         }
     }
 
+    /// Get the latest `len` samples from the buffer end (for real-time volume)
+    pub fn get_latest(&self, len: usize) -> Option<Vec<f32>> {
+        let buf = self.buffer.lock().unwrap();
+        if buf.len() >= len {
+            Some(buf[buf.len() - len..].to_vec())
+        } else {
+            None
+        }
+    }
+
     pub fn get_remaining(&self, offset: usize) -> Option<Vec<f32>> {
         let buf = self.buffer.lock().unwrap();
         if offset < buf.len() {

@@ -154,8 +154,8 @@ fn run(model_override: Option<String>, device: &str) {
     while !Path::new(STOP_FILE).exists() && !stop_flag.load(std::sync::atomic::Ordering::SeqCst) {
         thread::sleep(Duration::from_millis(100));
 
-        // Compute volume from recent audio (RMS-like, amplified for overlay)
-        if let Some(recent) = capture.get_block(offset, TARGET_RATE / 4) {
+        // Compute volume from the very latest audio (62ms window for real-time feel)
+        if let Some(recent) = capture.get_latest(TARGET_RATE / 16) {
             let rms = (recent.iter().map(|&s| s * s).sum::<f32>() / recent.len() as f32).sqrt();
             ov.update_volume(rms * 40.0);
         }

@@ -14,30 +14,29 @@ const WIN_WIDTH: i32 = ((BAR_WIDTH + BAR_GAP) * BAR_COUNT as f64) as i32 + 20;
 const WIN_HEIGHT: i32 = 64;
 const BAR_RADIUS: f64 = 4.0;
 
+// Per-bar animation offsets for organic feel
+const BAR_WEIGHTS: [f64; BAR_COUNT] = [0.7, 0.85, 0.95, 1.0, 1.05, 1.0, 0.95, 0.85, 0.7];
+
 pub struct Overlay {
-    volumes: Arc<Mutex<[f64; BAR_COUNT]>>,
-    smooth: Arc<Mutex<[f64; BAR_COUNT]>>,
+    current_vol: Arc<Mutex<f64>>,
+    display: Arc<Mutex<[f64; BAR_COUNT]>>,
 }
 
 impl Overlay {
     pub fn new() -> Self {
         Self {
-            volumes: Arc::new(Mutex::new([0.0; BAR_COUNT])),
-            smooth: Arc::new(Mutex::new([0.0; BAR_COUNT])),
+            current_vol: Arc::new(Mutex::new(0.0)),
+            display: Arc::new(Mutex::new([0.0; BAR_COUNT])),
         }
     }
 
     pub fn update_volume(&self, vol: f32) {
-        let mut v = self.volumes.lock().unwrap();
-        for i in 0..BAR_COUNT - 1 {
-            v[i] = v[i + 1];
-        }
-        v[BAR_COUNT - 1] = vol.clamp(0.0, 1.0) as f64;
+        *self.current_vol.lock().unwrap() = vol.clamp(0.0, 1.0) as f64;
     }
 
     pub fn show(&self, stop: &Arc<AtomicBool>) {
-        let volumes = self.volumes.clone();
-        let smooth = self.smooth.clone();
+        let vol = self.current_vol.clone();
+        let display = self.display.clone();
         let stop_flag = stop.clone();
 
         let app = Application::builder()
@@ -66,61 +65,59 @@ impl Overlay {
                 .vexpand(true)
                 .build();
 
-            let vols = volumes.clone();
-            let sm = smooth.clone();
+            let vol_c = vol.clone();
+            let disp = display.clone();
             let tick = Arc::new(Mutex::new(0u64));
-            let tick_clone = tick.clone();
+            let tick_c = tick.clone();
             drawing.set_draw_func(move |_area, cr, _w, h| {
-                // Smooth interpolation
-                {
-                    let v = vols.lock().unwrap();
-                    let mut s = sm.lock().unwrap();
-                    for i in 0..BAR_COUNT {
-                        let target = v[i];
-                        s[i] += (target - s[i]) * 0.35;
-                        // Decay faster when silent
-                        if target < 0.05 {
-                            s[i] *= 0.85;
-                        }
-                    }
-                }
+                let current = *vol_c.lock().unwrap();
 
-                let mut t = tick_clone.lock().unwrap();
+                let mut t = tick_c.lock().unwrap();
                 *t += 1;
                 let now = *t;
                 drop(t);
 
-                let s = sm.lock().unwrap();
+                // Animate each bar toward current volume with per-bar weight
+                let mut d = disp.lock().unwrap();
+                for i in 0..BAR_COUNT {
+                    let target = current * BAR_WEIGHTS[i];
+                    // Attack fast, decay slower
+                    if target > d[i] {
+                        d[i] += (target - d[i]) * 0.55;
+                    } else {
+                        d[i] += (target - d[i]) * 0.18;
+                    }
+                }
+
                 let total_w = (BAR_WIDTH + BAR_GAP) * BAR_COUNT as f64;
                 let start_x = (WIN_WIDTH as f64 - total_w) / 2.0;
 
                 // Background pill
-                let bg_x = start_x - 8.0;
-                let bg_y = 4.0;
-                let bg_w = total_w + 16.0;
-                let bg_h = h as f64 - 8.0;
-                cr.set_source_rgba(0.0, 0.0, 0.0, 0.55);
-                rounded_rect(cr, bg_x, bg_y, bg_w, bg_h, 10.0);
+                let bg_x = start_x - 10.0;
+                let bg_y = 3.0;
+                let bg_w = total_w + 20.0;
+                let bg_h = h as f64 - 6.0;
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.5);
+                rounded_rect(cr, bg_x, bg_y, bg_w, bg_h, 12.0);
                 let _ = cr.fill();
 
                 for i in 0..BAR_COUNT {
-                    let vol = s[i].clamp(0.0, 1.0);
-                    // Use power curve for more dynamic range — small sounds still visible
-                    let visual = vol.powf(0.6);
+                    let v = d[i].clamp(0.0, 1.0);
+                    let visual = v.powf(0.55);
                     let bar_h = MIN_BAR_HEIGHT + visual * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
                     let x = start_x + (i as f64) * (BAR_WIDTH + BAR_GAP);
                     let y = h as f64 - bar_h - 8.0;
 
-                    // Color gradient: idle=warm amber, mid=gold, active=bright teal/cyan
-                    let r = (1.0 - visual * 0.7).max(0.2);
+                    // Amber → teal/cyan gradient based on volume
+                    let r = (1.0 - visual * 0.75).max(0.15);
                     let g = 0.55 + visual * 0.45;
-                    let b = 0.15 + visual * 0.65;
-                    let alpha = 0.65 + visual * 0.35;
+                    let b = 0.1 + visual * 0.7;
+                    let alpha = 0.6 + visual * 0.4;
 
-                    // Glow behind bar
+                    // Glow
                     if visual > 0.08 {
-                        cr.set_source_rgba(r, g, b, visual * 0.18);
-                        rounded_rect(cr, x - 2.5, y - 2.5, BAR_WIDTH + 5.0, bar_h + 5.0, BAR_RADIUS + 2.5);
+                        cr.set_source_rgba(r, g, b, visual * 0.15);
+                        rounded_rect(cr, x - 3.0, y - 3.0, BAR_WIDTH + 6.0, bar_h + 6.0, BAR_RADIUS + 3.0);
                         let _ = cr.fill();
                     }
 
@@ -130,19 +127,18 @@ impl Overlay {
                     let _ = cr.fill();
                 }
 
-                // REC dot indicator — pulsing
-                let pulse = 0.5 + 0.5 * ((now as f64 * 0.07).sin());
-                let dot_r = 3.0;
+                // REC dot — pulsing
+                let pulse = 0.5 + 0.5 * ((now as f64 * 0.06).sin());
                 let dot_x = start_x + total_w / 2.0;
                 let dot_y = 10.0;
-                cr.set_source_rgba(1.0, 0.55, 0.15, 0.45 + pulse * 0.55);
-                cr.arc(dot_x, dot_y, dot_r, 0.0, std::f64::consts::PI * 2.0);
+                cr.set_source_rgba(1.0, 0.55, 0.15, 0.4 + pulse * 0.6);
+                cr.arc(dot_x, dot_y, 3.0, 0.0, std::f64::consts::PI * 2.0);
                 let _ = cr.fill();
             });
 
             let drawing_clone = drawing.clone();
             let stop_c = stop_flag.clone();
-            glib::timeout_add_local(std::time::Duration::from_millis(30), move || {
+            glib::timeout_add_local(std::time::Duration::from_millis(25), move || {
                 drawing_clone.queue_draw();
                 if stop_c.load(Ordering::SeqCst) {
                     if let Some(native) = drawing_clone.native() {
