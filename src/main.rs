@@ -34,9 +34,32 @@ struct Cli {
     #[arg(long, default_value = "default")]
     device: String,
 
-    /// Language code (fr, en, de, auto) — default: auto-detect
+    /// Language code (fr, en, de, auto) — default: from config or auto-detect
     #[arg(long)]
     lang: Option<String>,
+}
+
+fn config_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    format!("{}/.config/dictaway/config", home)
+}
+
+fn read_config() -> Option<String> {
+    let path = config_path();
+    let content = fs::read_to_string(&path).ok()?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            match key.trim() {
+                "lang" => return Some(value.trim().to_string()),
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 fn main() {
@@ -90,9 +113,14 @@ fn run(model_override: Option<String>, device: &str, lang_override: Option<Strin
     }
 
     println!("🎤 Loading model...");
-    let lang = match lang_override.as_deref() {
-        Some("auto") | None => None,
-        Some(l) => Some(l.to_string()),
+    let lang = match lang_override {
+        Some(l) => {
+            if l == "auto" { None } else { Some(l) }
+        }
+        None => match read_config() {
+            Some(l) if l != "auto" => Some(l),
+            _ => None,
+        },
     };
     let transcriber = match transcriber::Transcriber::new(&model_path, lang) {
         Ok(t) => t,
