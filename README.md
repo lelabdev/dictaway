@@ -1,54 +1,78 @@
-# dictate
+# dictaway
 
-Voice dictation tool for Wayland. Toggle-based: press to start, press again to stop. Text is transcribed in real-time and typed directly into the focused application.
+Voice dictation for Wayland. Press a key, speak, press again — text appears in your focused app.
 
-Captures audio via `ffmpeg`, transcribes with [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (in-memory, no temp files, CUDA GPU accelerated), and types text using `wtype`. Shows a real-time waveform overlay during dictation. Automatically pauses media.
+Captures audio via `ffmpeg`, transcribes with [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (CUDA GPU accelerated, no temp files), types with `wtype`. Shows a real-time waveform overlay. Pauses media while dictating.
 
 ## Features
 
 - Toggle-based: one shortcut to start/stop
 - Real-time waveform overlay (GTK4 Layer Shell, amber→teal gradient)
-- In-memory audio pipeline (no temp WAV files)
+- Auto-detects language (French, English, German, etc.)
+- Auto-downloads whisper model on first run
 - CUDA GPU acceleration via `whisper-rs`
 - Automatic media pause/resume via `playerctl`
+- In-memory audio pipeline (no temp WAV files)
 - Whisper artifacts filtered (music tags, ellipsis)
-- Auto-downloads whisper model if missing
-- Configurable whisper model via `--model` flag
-- Configurable audio device via `--device` flag
-- Graceful Ctrl+C handling
+- Configurable model, audio device, and language via flags
 
 ## Requirements
 
-- Rust toolchain
+- Rust toolchain + Cargo
 - `ffmpeg` (audio capture)
 - `wtype` (Wayland keyboard simulator)
 - `playerctl` (media control)
 - NVIDIA GPU + CUDA (optional, for GPU acceleration)
-- Whisper model file (see below)
 
 ## Install
 
 ```bash
-# Clone
-git clone <repo-url> && cd dictate
+cargo install --git https://github.com/lelabdev/dictaway --features cuda
+```
 
-# Build (with CUDA support)
-cargo build --release
+Or from source:
 
-# Symlink
-ln -sf $(pwd)/target/release/dictate ~/.local/bin/dictate
+```bash
+git clone https://github.com/lelabdev/dictaway.git
+cd dictaway
+cargo install --path . --features cuda
 ```
 
 ## Usage
 
 ```bash
-dictate                                        # toggle on/off (default model)
+dictate                                        # toggle on/off (auto-detect language)
+dictate --lang fr                              # force French
+dictate --lang en                              # force English
 dictate --model ~/path/to/ggml-medium.bin      # use a specific model
+dictate --device alsa_input.pci-001            # use a specific audio device
 dictate --stop                                 # force stop
 ```
 
 - **First call**: starts listening, pauses media, transcribes and types text in 3-second blocks
 - **Second call** (or Ctrl+C): stops, flushes remaining text, resumes media
+
+## First Run
+
+On first launch, if no model is found, you'll see an interactive picker:
+
+```
+🎤 No whisper model found. Let's pick one!
+
+  #  Model       Size     GPU VRAM   Speed    Quality
+  ──────────────────────────────────────────────────────
+  1  tiny        75 MB    < 1 GB    ⚡⚡⚡   Basic
+  2  base        142 MB   ~1 GB     ⚡⚡    Decent
+  3  small       466 MB   ~2 GB     ⚡      Good ← recommended
+  4  medium      1.5 GB   ~5 GB     Slow    Very good
+  5  large-v3    2.9 GB   ~10 GB    V slow  Excellent
+
+  💡 No GPU? All models work on CPU too (just slower).
+
+  Pick a model [1-5] (default: 3):
+```
+
+The model is downloaded automatically and reused on future runs.
 
 ## Keybinding
 
@@ -57,32 +81,6 @@ Example for [MangoWM](https://mangowm.github.io/):
 ```
 bind=SUPER,d,spawn,dictate
 ```
-
-## Model
-
-Default: `~/.local/share/whisper.cpp/models/ggml-small.bin`
-
-Models are **auto-downloaded** on first use if missing. You can also download manually:
-
-```bash
-mkdir -p ~/.local/share/whisper.cpp/models
-
-# Small (default, 466 MB, good quality)
-curl -L -o ~/.local/share/whisper.cpp/models/ggml-small.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
-
-# Base (142 MB, faster, decent quality)
-curl -L -o ~/.local/share/whisper.cpp/models/ggml-base.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
-```
-
-| Model | Size | Speed | Quality |
-|-------|------|-------|---------|
-| `tiny` | 75 MB | ⚡⚡⚡ | Basic |
-| `base` | 142 MB | ⚡⚡ | Decent |
-| `small` | 466 MB | ⚡ | Good ← default |
-| `medium` | 1.5 GB | Slow | Very good |
-| `large-v3` | 2.9 GB | Very slow | Excellent |
 
 ## Architecture
 

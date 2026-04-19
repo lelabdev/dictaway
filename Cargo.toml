@@ -3,10 +3,14 @@ name = "dictate"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+cuda = ["whisper-rs/cuda"]
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
 gtk4 = "0.9"
 gtk4-layer-shell = "0.4"
 regex = "1"
-whisper-rs = { version = "0.16", features = ["cuda"] }
+whisper-rs = "0.16"
