@@ -27,6 +27,10 @@ struct Cli {
     /// Whisper model path
     #[arg(long)]
     model: Option<String>,
+
+    /// PulseAudio source device
+    #[arg(long, default_value = "default")]
+    device: String,
 }
 
 fn main() {
@@ -40,7 +44,7 @@ fn main() {
     if is_running() {
         force_stop();
     } else {
-        run(cli.model);
+        run(cli.model, &cli.device);
     }
 }
 
@@ -58,7 +62,7 @@ fn force_stop() {
     println!("🛑 Stopping...");
 }
 
-fn run(model_override: Option<String>) {
+fn run(model_override: Option<String>, device: &str) {
     let _ = fs::remove_file(STOP_FILE);
     let _ = fs::write(PID_FILE, process::id().to_string());
 
@@ -77,7 +81,7 @@ fn run(model_override: Option<String>) {
     };
 
     println!("🎤 Starting capture...");
-    let capture = match audio::AudioCapture::new() {
+    let capture = match audio::AudioCapture::new(device) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("❌ Audio: {}", e);

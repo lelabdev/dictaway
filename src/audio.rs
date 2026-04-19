@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 
 const TARGET_RATE: usize = 16000;
 const MAX_BUFFER_SECS: usize = 60;
-const MICRO: &str = "alsa_input.usb-Roland_EDIROL_UA-25EX-00.analog-stereo";
 
 pub struct AudioCapture {
     buffer: Arc<Mutex<Vec<f32>>>,
@@ -12,13 +11,13 @@ pub struct AudioCapture {
 }
 
 impl AudioCapture {
-    pub fn new() -> Result<Self, String> {
+    pub fn new(device: &str) -> Result<Self, String> {
         let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
 
         let mut ffmpeg = Command::new("ffmpeg")
             .args([
                 "-f", "pulse",
-                "-i", MICRO,
+                "-i", device,
                 "-f", "s16le",
                 "-acodec", "pcm_s16le",
                 "-ar", &TARGET_RATE.to_string(),
