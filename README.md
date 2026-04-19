@@ -26,17 +26,29 @@ Captures audio via `ffmpeg`, transcribes with [whisper.cpp](https://github.com/g
 
 ## Install
 
+Download the latest binary (Linux x86_64, CUDA enabled):
+
+```bash
+curl -L https://github.com/lelabdev/dictaway/releases/latest/download/dictate -o ~/.local/bin/dictate && chmod +x ~/.local/bin/dictate
+```
+
+Or build from source:
+
 ```bash
 cargo install --git https://github.com/lelabdev/dictaway --features cuda
 ```
 
-Or from source:
+<details>
+<summary>Build from source (manual)</summary>
 
 ```bash
 git clone https://github.com/lelabdev/dictaway.git
 cd dictaway
-cargo install --path . --features cuda
+cargo build --release --features cuda
+cp target/release/dictate ~/.local/bin/
 ```
+
+</details>
 
 ## Usage
 
