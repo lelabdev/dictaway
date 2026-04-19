@@ -1,0 +1,9 @@
+[package]
+name = "dictate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+cpal = "0.17"
+whisper-rs = "0.16"
