@@ -6,6 +6,7 @@ mod typer;
 
 use clap::Parser;
 use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
 use std::process;
 use std::sync::atomic::AtomicBool;
@@ -69,43 +70,18 @@ fn run(model_override: Option<String>, device: &str) {
 
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let model_dir = format!("{}/.local/share/whisper.cpp/models", home);
-    let default_model = format!("{}/ggml-small.bin", model_dir);
-    let model_path = model_override.unwrap_or(default_model);
 
-    // Check model exists, offer to download
+    // Resolve which model to use
+    let model_path = match model_override {
+        Some(p) => p,
+        None => resolve_model(&model_dir),
+    };
+
+    // Download if missing
     if !Path::new(&model_path).exists() {
-        let filename = Path::new(&model_path)
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| "ggml-small.bin".to_string());
-
-        let url = format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}", filename);
-
-        eprintln!("⚠️  Model not found: {}", model_path);
-        eprintln!();
-
-        // Try auto-download
-        eprintln!("⬇️  Downloading {}...", filename);
-        fs::create_dir_all(&model_dir).ok();
-        let status = process::Command::new("curl")
-            .args(["-L", "--progress-bar", "-o", &model_path, &url])
-            .stdin(process::Stdio::inherit())
-            .stdout(process::Stdio::inherit())
-            .stderr(process::Stdio::inherit())
-            .status();
-
-        match status {
-            Ok(s) if s.success() => {
-                eprintln!("✅ Model downloaded!");
-            }
-            _ => {
-                eprintln!("❌ Download failed. Run manually:");
-                eprintln!("   mkdir -p {}", model_dir);
-                eprintln!("   curl -L -o {} {}", model_path, url);
-                fs::remove_file(&model_path).ok();
-                cleanup();
-                return;
-            }
+        if !download_model(&model_path) {
+            cleanup();
+            return;
         }
     }
 
@@ -205,4 +181,96 @@ fn cleanup() {
 fn clean_whisper_text(text: &str) -> String {
     let re = regex::Regex::new(r"\*[^*]+\*|\[[^\]]+\]|\.{2,}|…").unwrap();
     re.replace_all(text, "").trim().to_string()
+}
+
+/// List of available whisper models: (name, filename, size_label, speed, quality)
+const MODELS: &[(&str, &str, &str, &str, &str)] = &[
+    ("tiny",     "ggml-tiny.bin",     "75 MB",  "⚡⚡⚡", "Basic"),
+    ("base",     "ggml-base.bin",     "142 MB", "⚡⚡",  "Decent"),
+    ("small",    "ggml-small.bin",    "466 MB", "⚡",    "Good"),
+    ("medium",   "ggml-medium.bin",   "1.5 GB", "Slow",  "Very good"),
+    ("large-v3", "ggml-large-v3.bin", "2.9 GB", "V slow","Excellent"),
+];
+
+/// Find an existing model, or run first-time setup to pick one.
+fn resolve_model(model_dir: &str) -> String {
+    // Check if any model already exists
+    for (_, filename, _, _, _) in MODELS {
+        let path = format!("{}/{}", model_dir, filename);
+        if Path::new(&path).exists() {
+            return path;
+        }
+    }
+
+    // No model found — first-run setup
+    eprintln!("🎤 No whisper model found. Let's pick one!\n");
+    eprintln!("  #  Model       Size     Speed    Quality");
+    eprintln!("  ─────────────────────────────────────────");
+    for (i, (_, _, size, speed, quality)) in MODELS.iter().enumerate() {
+        let marker = if i == 2 { " ← recommended" } else { "" };
+        eprintln!("  {}  {:10}  {:7}  {:7}  {}{}", i + 1, MODELS[i].0, size, speed, quality, marker);
+    }
+    eprintln!();
+
+    loop {
+        eprint!("  Pick a model [1-5] (default: 3): ");
+        io::stderr().flush().ok();
+
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input).is_err() {
+            eprintln!("  Using small (default)");
+            return format!("{}/{}", model_dir, MODELS[2].1);
+        }
+
+        let input = input.trim();
+        let idx = if input.is_empty() {
+            2 // default = small
+        } else {
+            match input.parse::<usize>() {
+                Ok(n) if n >= 1 && n <= MODELS.len() => n - 1,
+                _ => {
+                    eprintln!("  Enter a number 1-5");
+                    continue;
+                }
+            }
+        };
+
+        eprintln!("  ✅ Selected: {} ({})\n", MODELS[idx].0, MODELS[idx].2);
+        return format!("{}/{}", model_dir, MODELS[idx].1);
+    }
+}
+
+/// Download a model file from HuggingFace via curl.
+fn download_model(model_path: &str) -> bool {
+    let filename = Path::new(model_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| "ggml-small.bin".to_string());
+
+    let url = format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}", filename);
+    let model_dir = Path::new(model_path).parent().unwrap_or(Path::new("."));
+
+    eprintln!("⬇️  Downloading {}...", filename);
+    fs::create_dir_all(model_dir).ok();
+
+    let status = process::Command::new("curl")
+        .args(["-L", "--progress-bar", "-o", model_path, &url])
+        .stdin(process::Stdio::inherit())
+        .stdout(process::Stdio::inherit())
+        .stderr(process::Stdio::inherit())
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            eprintln!("✅ Model downloaded!\n");
+            true
+        }
+        _ => {
+            eprintln!("❌ Download failed. Run manually:");
+            eprintln!("   mkdir -p {}", model_dir.display());
+            eprintln!("   curl -L -o {} {}", model_path, url);
+            fs::remove_file(model_path).ok();
+            false
+        }
+    }
 }
