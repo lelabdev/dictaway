@@ -2,18 +2,19 @@
 
 Voice dictation tool for Wayland. Toggle-based: press to start, press again to stop. Text is transcribed in real-time and typed directly into the focused application.
 
-Captures audio via `ffmpeg`, transcribes with [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (in-memory, no temp files, CUDA GPU accelerated), and types text using `wtype`. Automatically pauses media during dictation.
+Captures audio via `ffmpeg`, transcribes with [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (in-memory, no temp files, CUDA GPU accelerated), and types text using `wtype`. Shows a real-time waveform overlay during dictation. Automatically pauses media.
 
 ## Features
 
 - Toggle-based: one shortcut to start/stop
+- Real-time waveform overlay (GTK4 Layer Shell, amber→teal gradient)
 - In-memory audio pipeline (no temp WAV files)
 - CUDA GPU acceleration via `whisper-rs`
-- Visual waveform overlay (GTK4 Layer Shell) during dictation
 - Automatic media pause/resume via `playerctl`
 - Whisper artifacts filtered (music tags, ellipsis)
 - Auto-downloads whisper model if missing
 - Configurable whisper model via `--model` flag
+- Configurable audio device via `--device` flag
 - Graceful Ctrl+C handling
 
 ## Requirements
@@ -88,12 +89,21 @@ curl -L -o ~/.local/share/whisper.cpp/models/ggml-base.bin \
 ```
 ffmpeg (PulseAudio, 16kHz mono)
   → ring buffer (f32 samples)
-    → whisper-rs + CUDA (transcription, 3s blocks)
-      → text filter (remove artifacts)
-        → wtype (type text)
+    ├→ volume meter → overlay (GTK4 Layer Shell, real-time)
+    └→ whisper-rs + CUDA (transcription, 3s blocks)
+         → text filter (remove artifacts)
+           → wtype (type text)
 
 playerctl --all-players pause/play (media control)
 ```
+
+### Overlay
+
+A floating waveform appears at the bottom of the screen during dictation:
+- 9 animated bars with amber→teal color gradient based on voice level
+- Real-time response (62ms audio window, 40fps rendering)
+- Pulsing REC indicator dot
+- Auto-dismisses when dictation stops
 
 ## License
 
