@@ -1,5 +1,6 @@
 mod audio;
 mod media;
+mod overlay;
 mod transcriber;
 mod typer;
 
@@ -90,11 +91,20 @@ fn run(model_override: Option<String>, device: &str) {
         }
     };
 
+    // Start overlay
+    let ov = Arc::new(overlay::Overlay::new());
+    let ov_clone = ov.clone();
+    let overlay_stop = Arc::new(AtomicBool::new(false));
+    let overlay_stop_clone = overlay_stop.clone();
+    thread::spawn(move || {
+        ov_clone.show(&overlay_stop_clone);
+    });
+
     media::pause_all();
     println!("🎤 Listening... (run 'dictate' again to stop)");
 
     // Handle Ctrl+C
-    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_clone = stop_flag.clone();
     ctrlc::set_handler(move || {
         stop_flag_clone.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -104,8 +114,15 @@ fn run(model_override: Option<String>, device: &str) {
     let mut offset: usize = 0;
 
     while !Path::new(STOP_FILE).exists() && !stop_flag.load(std::sync::atomic::Ordering::SeqCst) {
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(100));
 
+        // Compute volume from recent audio
+        if let Some(recent) = capture.get_block(offset, TARGET_RATE / 4) {
+            let vol = recent.iter().map(|&s| s.abs()).sum::<f32>() / recent.len() as f32;
+            ov.update_volume(vol * 10.0); // amplify for visibility
+        }
+
+        // Transcribe complete blocks
         while let Some(block) = capture.get_block(offset, block_samples) {
             match transcriber.transcribe(&block) {
                 Some(text) => {
@@ -120,6 +137,9 @@ fn run(model_override: Option<String>, device: &str) {
             offset += block_samples;
         }
     }
+
+    // Stop overlay
+    overlay_stop.store(true, std::sync::atomic::Ordering::SeqCst);
 
     // Flush remaining audio
     if let Some(remaining) = capture.get_remaining(offset) {
