@@ -105,20 +105,22 @@ impl Overlay {
 
                 for i in 0..BAR_COUNT {
                     let vol = s[i].clamp(0.0, 1.0);
-                    let bar_h = MIN_BAR_HEIGHT + vol * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
+                    // Use power curve for more dynamic range — small sounds still visible
+                    let visual = vol.powf(0.6);
+                    let bar_h = MIN_BAR_HEIGHT + visual * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
                     let x = start_x + (i as f64) * (BAR_WIDTH + BAR_GAP);
                     let y = h as f64 - bar_h - 8.0;
 
-                    // Color gradient: idle=dim warm red, active=bright coral/orange
-                    let r = 0.95;
-                    let g = 0.3 + vol * 0.5;
-                    let b = 0.25 + vol * 0.2;
-                    let alpha = 0.7 + vol * 0.3;
+                    // Color gradient: idle=warm amber, mid=gold, active=bright teal/cyan
+                    let r = (1.0 - visual * 0.7).max(0.2);
+                    let g = 0.55 + visual * 0.45;
+                    let b = 0.15 + visual * 0.65;
+                    let alpha = 0.65 + visual * 0.35;
 
                     // Glow behind bar
-                    if vol > 0.1 {
-                        cr.set_source_rgba(r, g * 0.8, b * 0.8, vol * 0.2);
-                        rounded_rect(cr, x - 2.0, y - 2.0, BAR_WIDTH + 4.0, bar_h + 4.0, BAR_RADIUS + 2.0);
+                    if visual > 0.08 {
+                        cr.set_source_rgba(r, g, b, visual * 0.18);
+                        rounded_rect(cr, x - 2.5, y - 2.5, BAR_WIDTH + 5.0, bar_h + 5.0, BAR_RADIUS + 2.5);
                         let _ = cr.fill();
                     }
 
@@ -129,11 +131,11 @@ impl Overlay {
                 }
 
                 // REC dot indicator — pulsing
-                let pulse = 0.5 + 0.5 * ((now as f64 * 0.08).sin());
-                let dot_r = 3.5;
+                let pulse = 0.5 + 0.5 * ((now as f64 * 0.07).sin());
+                let dot_r = 3.0;
                 let dot_x = start_x + total_w / 2.0;
                 let dot_y = 10.0;
-                cr.set_source_rgba(1.0, 0.2, 0.15, 0.5 + pulse * 0.5);
+                cr.set_source_rgba(1.0, 0.55, 0.15, 0.45 + pulse * 0.55);
                 cr.arc(dot_x, dot_y, dot_r, 0.0, std::f64::consts::PI * 2.0);
                 let _ = cr.fill();
             });
