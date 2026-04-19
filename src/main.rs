@@ -183,19 +183,19 @@ fn clean_whisper_text(text: &str) -> String {
     re.replace_all(text, "").trim().to_string()
 }
 
-/// List of available whisper models: (name, filename, size_label, speed, quality)
-const MODELS: &[(&str, &str, &str, &str, &str)] = &[
-    ("tiny",     "ggml-tiny.bin",     "75 MB",  "⚡⚡⚡", "Basic"),
-    ("base",     "ggml-base.bin",     "142 MB", "⚡⚡",  "Decent"),
-    ("small",    "ggml-small.bin",    "466 MB", "⚡",    "Good"),
-    ("medium",   "ggml-medium.bin",   "1.5 GB", "Slow",  "Very good"),
-    ("large-v3", "ggml-large-v3.bin", "2.9 GB", "V slow","Excellent"),
+/// List of available whisper models: (name, filename, size_label, vram, speed, quality)
+const MODELS: &[(&str, &str, &str, &str, &str, &str)] = &[
+    ("tiny",     "ggml-tiny.bin",     "75 MB",  "< 1 GB", "⚡⚡⚡", "Basic"),
+    ("base",     "ggml-base.bin",     "142 MB", "~1 GB",  "⚡⚡",  "Decent"),
+    ("small",    "ggml-small.bin",    "466 MB", "~2 GB",  "⚡",    "Good"),
+    ("medium",   "ggml-medium.bin",   "1.5 GB", "~5 GB",  "Slow",  "Very good"),
+    ("large-v3", "ggml-large-v3.bin", "2.9 GB", "~10 GB", "V slow","Excellent"),
 ];
 
 /// Find an existing model, or run first-time setup to pick one.
 fn resolve_model(model_dir: &str) -> String {
     // Check if any model already exists
-    for (_, filename, _, _, _) in MODELS {
+    for (_, filename, _, _, _, _) in MODELS {
         let path = format!("{}/{}", model_dir, filename);
         if Path::new(&path).exists() {
             return path;
@@ -204,12 +204,14 @@ fn resolve_model(model_dir: &str) -> String {
 
     // No model found — first-run setup
     eprintln!("🎤 No whisper model found. Let's pick one!\n");
-    eprintln!("  #  Model       Size     Speed    Quality");
-    eprintln!("  ─────────────────────────────────────────");
-    for (i, (_, _, size, speed, quality)) in MODELS.iter().enumerate() {
+    eprintln!("  #  Model       Size     GPU VRAM   Speed    Quality");
+    eprintln!("  ──────────────────────────────────────────────────────");
+    for (i, (_, _, size, vram, speed, quality)) in MODELS.iter().enumerate() {
         let marker = if i == 2 { " ← recommended" } else { "" };
-        eprintln!("  {}  {:10}  {:7}  {:7}  {}{}", i + 1, MODELS[i].0, size, speed, quality, marker);
+        eprintln!("  {}  {:10}  {:7}  {:9}  {:7}  {}{}", i + 1, MODELS[i].0, size, vram, speed, quality, marker);
     }
+    eprintln!();
+    eprintln!("  💡 No GPU? All models work on CPU too (just slower).");
     eprintln!();
 
     loop {
