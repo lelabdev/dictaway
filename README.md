@@ -9,8 +9,10 @@ Captures audio via `ffmpeg`, transcribes with [whisper.cpp](https://github.com/g
 - Toggle-based: one shortcut to start/stop
 - In-memory audio pipeline (no temp WAV files)
 - CUDA GPU acceleration via `whisper-rs`
+- Visual waveform overlay (GTK4 Layer Shell) during dictation
 - Automatic media pause/resume via `playerctl`
 - Whisper artifacts filtered (music tags, ellipsis)
+- Auto-downloads whisper model if missing
 - Configurable whisper model via `--model` flag
 - Graceful Ctrl+C handling
 
@@ -58,6 +60,8 @@ bind=SUPER,d,spawn,dictate
 ## Model
 
 Default: `~/.local/share/whisper.cpp/models/ggml-small.bin`
+
+Models are **auto-downloaded** on first use if missing. You can also download manually:
 
 ```bash
 mkdir -p ~/.local/share/whisper.cpp/models

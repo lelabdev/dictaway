@@ -6,13 +6,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 const BAR_COUNT: usize = 9;
-const BAR_WIDTH: f64 = 5.0;
-const BAR_GAP: f64 = 3.0;
-const MIN_BAR_HEIGHT: f64 = 4.0;
-const MAX_BAR_HEIGHT: f64 = 40.0;
-const WIN_WIDTH: i32 = ((BAR_WIDTH + BAR_GAP) * BAR_COUNT as f64) as i32 + 10;
-const WIN_HEIGHT: i32 = 56;
-const BAR_RADIUS: f64 = 2.5;
+const BAR_WIDTH: f64 = 8.0;
+const BAR_GAP: f64 = 5.0;
+const MIN_BAR_HEIGHT: f64 = 6.0;
+const MAX_BAR_HEIGHT: f64 = 48.0;
+const WIN_WIDTH: i32 = ((BAR_WIDTH + BAR_GAP) * BAR_COUNT as f64) as i32 + 20;
+const WIN_HEIGHT: i32 = 64;
+const BAR_RADIUS: f64 = 4.0;
 
 pub struct Overlay {
     volumes: Arc<Mutex<[f64; BAR_COUNT]>>,
@@ -57,7 +57,7 @@ impl Overlay {
             window.init_layer_shell();
             window.set_layer(gtk4_layer_shell::Layer::Overlay);
             window.set_anchor(gtk4_layer_shell::Edge::Bottom, true);
-            window.set_margin(gtk4_layer_shell::Edge::Bottom, 24);
+            window.set_margin(gtk4_layer_shell::Edge::Bottom, 32);
 
             let drawing = DrawingArea::builder()
                 .content_width(WIN_WIDTH)
@@ -68,48 +68,79 @@ impl Overlay {
 
             let vols = volumes.clone();
             let sm = smooth.clone();
+            let tick = Arc::new(Mutex::new(0u64));
+            let tick_clone = tick.clone();
             drawing.set_draw_func(move |_area, cr, _w, h| {
                 // Smooth interpolation
                 {
                     let v = vols.lock().unwrap();
                     let mut s = sm.lock().unwrap();
                     for i in 0..BAR_COUNT {
-                        s[i] += (v[i] - s[i]) * 0.3;
+                        let target = v[i];
+                        s[i] += (target - s[i]) * 0.35;
+                        // Decay faster when silent
+                        if target < 0.05 {
+                            s[i] *= 0.85;
+                        }
                     }
                 }
+
+                let mut t = tick_clone.lock().unwrap();
+                *t += 1;
+                let now = *t;
+                drop(t);
 
                 let s = sm.lock().unwrap();
                 let total_w = (BAR_WIDTH + BAR_GAP) * BAR_COUNT as f64;
                 let start_x = (WIN_WIDTH as f64 - total_w) / 2.0;
 
+                // Background pill
+                let bg_x = start_x - 8.0;
+                let bg_y = 4.0;
+                let bg_w = total_w + 16.0;
+                let bg_h = h as f64 - 8.0;
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.55);
+                rounded_rect(cr, bg_x, bg_y, bg_w, bg_h, 10.0);
+                let _ = cr.fill();
+
                 for i in 0..BAR_COUNT {
                     let vol = s[i].clamp(0.0, 1.0);
                     let bar_h = MIN_BAR_HEIGHT + vol * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
                     let x = start_x + (i as f64) * (BAR_WIDTH + BAR_GAP);
-                    let y = h as f64 - bar_h - 4.0;
+                    let y = h as f64 - bar_h - 8.0;
 
-                    // Color: low=soft red, high=bright orange-red
-                    let r = 1.0;
-                    let g = 0.25 + vol * 0.45;
-                    let b = 0.2 + vol * 0.15;
-                    let alpha = 0.5 + vol * 0.5;
+                    // Color gradient: idle=dim warm red, active=bright coral/orange
+                    let r = 0.95;
+                    let g = 0.3 + vol * 0.5;
+                    let b = 0.25 + vol * 0.2;
+                    let alpha = 0.7 + vol * 0.3;
 
+                    // Glow behind bar
+                    if vol > 0.1 {
+                        cr.set_source_rgba(r, g * 0.8, b * 0.8, vol * 0.2);
+                        rounded_rect(cr, x - 2.0, y - 2.0, BAR_WIDTH + 4.0, bar_h + 4.0, BAR_RADIUS + 2.0);
+                        let _ = cr.fill();
+                    }
+
+                    // Main bar
                     cr.set_source_rgba(r, g, b, alpha);
                     rounded_rect(cr, x, y, BAR_WIDTH, bar_h, BAR_RADIUS);
                     let _ = cr.fill();
-
-                    // Glow
-                    if vol > 0.15 {
-                        cr.set_source_rgba(r, g, b, vol * 0.25);
-                        rounded_rect(cr, x - 1.0, y - 1.0, BAR_WIDTH + 2.0, bar_h + 2.0, BAR_RADIUS + 1.0);
-                        let _ = cr.fill();
-                    }
                 }
+
+                // REC dot indicator — pulsing
+                let pulse = 0.5 + 0.5 * ((now as f64 * 0.08).sin());
+                let dot_r = 3.5;
+                let dot_x = start_x + total_w / 2.0;
+                let dot_y = 10.0;
+                cr.set_source_rgba(1.0, 0.2, 0.15, 0.5 + pulse * 0.5);
+                cr.arc(dot_x, dot_y, dot_r, 0.0, std::f64::consts::PI * 2.0);
+                let _ = cr.fill();
             });
 
             let drawing_clone = drawing.clone();
             let stop_c = stop_flag.clone();
-            glib::timeout_add_local(std::time::Duration::from_millis(33), move || {
+            glib::timeout_add_local(std::time::Duration::from_millis(30), move || {
                 drawing_clone.queue_draw();
                 if stop_c.load(Ordering::SeqCst) {
                     if let Some(native) = drawing_clone.native() {
