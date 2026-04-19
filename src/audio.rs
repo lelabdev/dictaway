@@ -1,77 +1,64 @@
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::SampleFormat;
+use std::io::Read;
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
-const TARGET_RATE: u32 = 16000;
+const TARGET_RATE: usize = 16000;
 const MAX_BUFFER_SECS: usize = 60;
+const MICRO: &str = "alsa_input.usb-Roland_EDIROL_UA-25EX-00.analog-stereo";
 
 pub struct AudioCapture {
     buffer: Arc<Mutex<Vec<f32>>>,
-    _stream: cpal::Stream,
+    _ffmpeg: Child,
 }
 
 impl AudioCapture {
     pub fn new() -> Result<Self, String> {
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or("No input device found")?;
-
-        let config = device
-            .default_input_config()
-            .map_err(|e| format!("Audio config error: {}", e))?;
-
-        let sample_rate = config.sample_rate();
-        let channels = config.channels();
-        let fmt = config.sample_format();
-
         let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
 
-        let stream = match fmt {
-            SampleFormat::F32 => {
-                let buf = buffer.clone();
-                device
-                    .build_input_stream(
-                        &config.into(),
-                        move |data: &[f32], _| {
-                            let converted = convert_chunk(data, channels, sample_rate);
-                            let mut b = buf.lock().unwrap();
-                            b.extend_from_slice(&converted);
-                            trim_buffer(&mut b);
-                        },
-                        |err| eprintln!("Audio error: {}", err),
-                        None,
-                    )
-                    .map_err(|e| format!("Stream error: {}", e))?
-            }
-            SampleFormat::I16 => {
-                let buf = buffer.clone();
-                device
-                    .build_input_stream(
-                        &config.into(),
-                        move |data: &[i16], _| {
-                            let f32_data: Vec<f32> =
-                                data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
-                            let converted = convert_chunk(&f32_data, channels, sample_rate);
-                            let mut b = buf.lock().unwrap();
-                            b.extend_from_slice(&converted);
-                            trim_buffer(&mut b);
-                        },
-                        |err| eprintln!("Audio error: {}", err),
-                        None,
-                    )
-                    .map_err(|e| format!("Stream error: {}", e))?
-            }
-            _ => return Err(format!("Unsupported sample format: {:?}", fmt)),
-        };
+        let mut ffmpeg = Command::new("ffmpeg")
+            .args([
+                "-f", "pulse",
+                "-i", MICRO,
+                "-f", "s16le",
+                "-acodec", "pcm_s16le",
+                "-ar", &TARGET_RATE.to_string(),
+                "-ac", "1",
+                "-loglevel", "quiet",
+                "pipe:1",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("ffmpeg: {}", e))?;
 
-        stream
-            .play()
-            .map_err(|e| format!("Cannot start audio: {}", e))?;
+        let stdout = ffmpeg.stdout.take().ok_or("No ffmpeg stdout")?;
+        let buf = buffer.clone();
+
+        // Read ffmpeg output in background thread
+        std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(stdout);
+            let mut raw = [0u8; 2]; // i16 = 2 bytes
+            loop {
+                match reader.read_exact(&mut raw) {
+                    Ok(()) => {
+                        let sample = i16::from_le_bytes([raw[0], raw[1]]);
+                        let f32_sample = sample as f32 / i16::MAX as f32;
+                        let mut b = buf.lock().unwrap();
+                        b.push(f32_sample);
+                        let max = TARGET_RATE * MAX_BUFFER_SECS;
+                        let len = b.len();
+                        if len > max {
+                            b.drain(0..len - max);
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
 
         Ok(Self {
             buffer,
-            _stream: stream,
+            _ffmpeg: ffmpeg,
         })
     }
 
@@ -94,43 +81,9 @@ impl AudioCapture {
     }
 }
 
-fn convert_chunk(samples: &[f32], channels: u16, sample_rate: u32) -> Vec<f32> {
-    let mono = to_mono(samples, channels);
-    if sample_rate == TARGET_RATE {
-        mono
-    } else {
-        resample(&mono, sample_rate, TARGET_RATE)
-    }
-}
-
-fn to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
-    if channels <= 1 {
-        return samples.to_vec();
-    }
-    samples
-        .chunks(channels as usize)
-        .map(|ch| ch.iter().sum::<f32>() / channels as f32)
-        .collect()
-}
-
-fn resample(samples: &[f32], from: u32, to: u32) -> Vec<f32> {
-    let ratio = to as f64 / from as f64;
-    let new_len = (samples.len() as f64 * ratio) as usize;
-    let mut result = Vec::with_capacity(new_len);
-    for i in 0..new_len {
-        let src_pos = i as f64 / ratio;
-        let idx = src_pos as usize;
-        let frac = src_pos - idx as f64;
-        let s0 = samples.get(idx).copied().unwrap_or(0.0);
-        let s1 = samples.get(idx + 1).copied().unwrap_or(0.0);
-        result.push(s0 + (s1 - s0) * frac as f32);
-    }
-    result
-}
-
-fn trim_buffer(buf: &mut Vec<f32>) {
-    let max = TARGET_RATE as usize * MAX_BUFFER_SECS;
-    if buf.len() > max {
-        buf.drain(0..buf.len() - max);
+impl Drop for AudioCapture {
+    fn drop(&mut self) {
+        let _ = self._ffmpeg.kill();
+        let _ = self._ffmpeg.wait();
     }
 }

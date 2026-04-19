@@ -7,6 +7,8 @@ use clap::Parser;
 use std::fs;
 use std::path::Path;
 use std::process;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -82,22 +84,29 @@ fn run() {
     media::pause_all();
     println!("🎤 Listening... (run 'dictate' again to stop)");
 
+    // Handle Ctrl+C
+    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_flag_clone = stop_flag.clone();
+    ctrlc::set_handler(move || {
+        stop_flag_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+    }).ok();
+
     let block_samples = TARGET_RATE * BLOCK_SECS;
     let mut offset: usize = 0;
 
-    while !Path::new(STOP_FILE).exists() {
+    while !Path::new(STOP_FILE).exists() && !stop_flag.load(std::sync::atomic::Ordering::SeqCst) {
         thread::sleep(Duration::from_millis(500));
 
         while let Some(block) = capture.get_block(offset, block_samples) {
             match transcriber.transcribe(&block) {
                 Some(text) => {
-                    let text = text.trim();
+                    let text = clean_whisper_text(&text);
                     if !text.is_empty() {
                         println!("📝 {}", text);
-                        typer::type_text(text);
+                        typer::type_text(&text);
                     }
                 }
-                None => print!("·"),
+                None => {}
             }
             offset += block_samples;
         }
@@ -124,4 +133,9 @@ fn run() {
 fn cleanup() {
     let _ = fs::remove_file(PID_FILE);
     let _ = fs::remove_file(STOP_FILE);
+}
+
+fn clean_whisper_text(text: &str) -> String {
+    let re = regex::Regex::new(r"\*[^*]+\*|\[[^\]]+\]").unwrap();
+    re.replace_all(text, "").trim().to_string()
 }

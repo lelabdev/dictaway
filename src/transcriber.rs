@@ -1,14 +1,20 @@
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use std::sync::Mutex;
+use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState};
 
 pub struct Transcriber {
-    ctx: WhisperContext,
+    state: Mutex<WhisperState>,
 }
 
 impl Transcriber {
     pub fn new(model_path: &str) -> Result<Self, String> {
         let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
             .map_err(|e| format!("Failed to load model: {:?}", e))?;
-        Ok(Self { ctx })
+        let state = ctx
+            .create_state()
+            .map_err(|e| format!("Failed to create state: {:?}", e))?;
+        Ok(Self {
+            state: Mutex::new(state),
+        })
     }
 
     pub fn transcribe(&self, samples: &[f32]) -> Option<String> {
@@ -18,7 +24,7 @@ impl Transcriber {
         params.set_print_timestamps(false);
         params.set_print_special(false);
 
-        let mut state = self.ctx.create_state().ok()?;
+        let mut state = self.state.lock().unwrap();
         state.full(params, samples).ok()?;
 
         let n = state.full_n_segments();

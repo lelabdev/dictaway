@@ -1,21 +1,10 @@
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 pub fn type_text(text: &str) {
-    let mut child = match Command::new("wtype")
-        .stdin(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("❌ wtype: {}", e);
-            return;
+    match Command::new("wtype").arg(text).spawn() {
+        Ok(mut child) => {
+            let _ = child.wait();
         }
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = write!(stdin, "{} ", text);
+        Err(e) => eprintln!("❌ wtype: {}", e),
     }
-
-    let _ = child.wait();
 }
