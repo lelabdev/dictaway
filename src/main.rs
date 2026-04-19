@@ -33,6 +33,10 @@ struct Cli {
     /// PulseAudio source device
     #[arg(long, default_value = "default")]
     device: String,
+
+    /// Language code (fr, en, de, auto) — default: auto-detect
+    #[arg(long)]
+    lang: Option<String>,
 }
 
 fn main() {
@@ -46,7 +50,7 @@ fn main() {
     if is_running() {
         force_stop();
     } else {
-        run(cli.model, &cli.device);
+        run(cli.model, &cli.device, cli.lang);
     }
 }
 
@@ -64,7 +68,7 @@ fn force_stop() {
     println!("🛑 Stopping...");
 }
 
-fn run(model_override: Option<String>, device: &str) {
+fn run(model_override: Option<String>, device: &str, lang_override: Option<String>) {
     let _ = fs::remove_file(STOP_FILE);
     let _ = fs::write(PID_FILE, process::id().to_string());
 
@@ -86,7 +90,11 @@ fn run(model_override: Option<String>, device: &str) {
     }
 
     println!("🎤 Loading model...");
-    let transcriber = match transcriber::Transcriber::new(&model_path) {
+    let lang = match lang_override.as_deref() {
+        Some("auto") | None => None,
+        Some(l) => Some(l.to_string()),
+    };
+    let transcriber = match transcriber::Transcriber::new(&model_path, lang) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("❌ Whisper: {}", e);

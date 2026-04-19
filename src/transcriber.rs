@@ -3,10 +3,11 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 pub struct Transcriber {
     state: Mutex<WhisperState>,
+    lang: Option<String>, // None = auto-detect
 }
 
 impl Transcriber {
-    pub fn new(model_path: &str) -> Result<Self, String> {
+    pub fn new(model_path: &str, lang: Option<String>) -> Result<Self, String> {
         let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
             .map_err(|e| format!("Failed to load model: {:?}", e))?;
         let state = ctx
@@ -14,12 +15,13 @@ impl Transcriber {
             .map_err(|e| format!("Failed to create state: {:?}", e))?;
         Ok(Self {
             state: Mutex::new(state),
+            lang,
         })
     }
 
     pub fn transcribe(&self, samples: &[f32]) -> Option<String> {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-        params.set_language(Some("fr"));
+        params.set_language(self.lang.as_deref());
         params.set_print_progress(false);
         params.set_print_timestamps(false);
         params.set_print_special(false);
