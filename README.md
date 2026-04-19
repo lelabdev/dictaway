@@ -27,14 +27,13 @@ Captures audio via `ffmpeg`, transcribes with [whisper.cpp](https://github.com/g
 
 ```bash
 # Clone
-git clone <repo-url> ~/1Dev/Projects/dictate/rust
+git clone <repo-url> && cd dictate
 
 # Build (with CUDA support)
-cd ~/1Dev/Projects/dictate/rust
 cargo build --release
 
 # Symlink
-ln -sf ~/1Dev/Projects/dictate/rust/target/release/dictate ~/.local/bin/dictate
+ln -sf $(pwd)/target/release/dictate ~/.local/bin/dictate
 ```
 
 ## Usage
