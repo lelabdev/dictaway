@@ -53,9 +53,8 @@ cp target/release/dictate ~/.local/bin/
 ## Usage
 
 ```bash
-dictate                                        # toggle on/off (auto-detect language)
-dictate --lang fr                              # force French
-dictate --lang en                              # force English
+dictate                                        # toggle on/off
+dictate --lang en                              # force English this time
 dictate --model ~/path/to/ggml-medium.bin      # use a specific model
 dictate --device alsa_input.pci-001            # use a specific audio device
 dictate --stop                                 # force stop
@@ -63,6 +62,19 @@ dictate --stop                                 # force stop
 
 - **First call**: starts listening, pauses media, transcribes and types text in 3-second blocks
 - **Second call** (or Ctrl+C): stops, flushes remaining text, resumes media
+
+## Configuration
+
+Create `~/.config/dictaway/config`:
+
+```
+# Default language (fr, en, de, auto)
+lang=fr
+```
+
+Available languages: `fr`, `en`, `de`, `es`, `it`, `pt`, `nl`, `hi`, `auto` (auto-detect).
+
+Override per-run with `dictate --lang en` or `dictate --lang auto`.
 
 ## First Run
 
