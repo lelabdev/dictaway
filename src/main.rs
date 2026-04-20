@@ -214,35 +214,36 @@ fn cleanup() {
     let _ = fs::remove_file(STOP_FILE);
 }
 
-fn load_filters() -> Vec<regex::Regex> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let path = format!("{}/.config/dictaway/filters", home);
-    let defaults = r#"\*[^*]+\*
-\[[^\]]+\]
-\.{2,}
-…
-BLANK_AUDIO"#;
-
-    let content = fs::read_to_string(&path).unwrap_or_else(|_| defaults.to_string());
-    let mut filters = Vec::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Ok(re) = regex::Regex::new(line) {
-            filters.push(re);
-        }
-    }
-    filters
-}
-
 fn clean_whisper_text(text: &str) -> String {
-    let filters = load_filters();
+    let default_patterns = [
+        r"\*[^*]+\*",
+        r"\[[^\]]+\]",
+        r"\.{2,}",
+        "…",
+        "BLANK_AUDIO",
+    ];
+
     let mut cleaned = text.to_string();
-    for re in &filters {
-        cleaned = re.replace_all(&cleaned, "").to_string();
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let custom_path = format!("{}/.config/dictaway/filters", home);
+    let custom_content = fs::read_to_string(&custom_path).ok();
+
+    let patterns: Vec<&str> = if let Some(content) = &custom_content {
+        content.lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .collect()
+    } else {
+        default_patterns.to_vec()
+    };
+
+    for p in &patterns {
+        if let Ok(re) = regex::Regex::new(p) {
+            cleaned = re.replace_all(&cleaned, "").to_string();
+        }
     }
+
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
