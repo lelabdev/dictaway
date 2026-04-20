@@ -195,10 +195,10 @@ fn run(model_override: Option<String>, device: &str, lang_override: Option<Strin
     if let Some(remaining) = capture.get_remaining(offset) {
         if remaining.len() > TARGET_RATE / 2 {
             if let Some(text) = transcriber.transcribe(&remaining) {
-                let text = text.trim();
+                let text = clean_whisper_text(&text);
                 if !text.is_empty() {
                     println!("📝 {}", text);
-                    typer::type_text(text);
+                    typer::type_text(&text);
                 }
             }
         }
@@ -215,12 +215,23 @@ fn cleanup() {
 }
 
 fn clean_whisper_text(text: &str) -> String {
+    const IGNORE_WORDS: &[&str] = &[
+        "Musique",
+        "Music",
+        "Bruit",
+        "Noise",
+        "Applaudissements",
+        "Applause",
+        "Rires",
+        "Laughter",
+        "BLANK_AUDIO",
+    ];
+
     let default_patterns = [
         r"\*[^*]+\*",
         r"\[[^\]]+\]",
         r"\.{2,}",
         "…",
-        "BLANK_AUDIO",
     ];
 
     let mut cleaned = text.to_string();
@@ -244,7 +255,12 @@ fn clean_whisper_text(text: &str) -> String {
         }
     }
 
-    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+    cleaned = cleaned.split_whitespace()
+        .filter(|word| !IGNORE_WORDS.iter().any(|w| w.eq_ignore_ascii_case(word)))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    cleaned
 }
 
 /// List of available whisper models: (name, filename, size_label, vram, speed, quality)
