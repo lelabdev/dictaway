@@ -214,9 +214,36 @@ fn cleanup() {
     let _ = fs::remove_file(STOP_FILE);
 }
 
+fn load_filters() -> Vec<regex::Regex> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let path = format!("{}/.config/dictaway/filters", home);
+    let defaults = r#"\*[^*]+\*
+\[[^\]]+\]
+\.{2,}
+…
+BLANK_AUDIO"#;
+
+    let content = fs::read_to_string(&path).unwrap_or_else(|_| defaults.to_string());
+    let mut filters = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Ok(re) = regex::Regex::new(line) {
+            filters.push(re);
+        }
+    }
+    filters
+}
+
 fn clean_whisper_text(text: &str) -> String {
-    let re = regex::Regex::new(r"\*[^*]+\*|\[[^\]]+\]|\.{2,}|…|BLANK_AUDIO|blank_audio").unwrap();
-    re.replace_all(text, "").split_whitespace().collect::<Vec<_>>().join(" ")
+    let filters = load_filters();
+    let mut cleaned = text.to_string();
+    for re in &filters {
+        cleaned = re.replace_all(&cleaned, "").to_string();
+    }
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// List of available whisper models: (name, filename, size_label, vram, speed, quality)
