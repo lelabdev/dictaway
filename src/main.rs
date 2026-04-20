@@ -225,42 +225,36 @@ fn clean_whisper_text(text: &str) -> String {
         "Rires",
         "Laughter",
         "BLANK_AUDIO",
+        "blank_audio",
     ];
 
-    let default_patterns = [
-        r"\*[^*]+\*",
-        r"\[[^\]]+\]",
-        r"\.{2,}",
-        "…",
-    ];
+    let re_brackets = regex::Regex::new(r"\[[^\]]*\]").unwrap();
+    let re_asterisks = regex::Regex::new(r"\*[^*]+\*").unwrap();
+    let re_dots = regex::Regex::new(r"(\.{2,}|…+)").unwrap();
 
     let mut cleaned = text.to_string();
+    cleaned = re_brackets.replace_all(&cleaned, "").to_string();
+    cleaned = re_asterisks.replace_all(&cleaned, "").to_string();
+    cleaned = re_dots.replace_all(&cleaned, "").to_string();
 
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let custom_path = format!("{}/.config/dictaway/filters", home);
-    let custom_content = fs::read_to_string(&custom_path).ok();
-
-    let patterns: Vec<&str> = if let Some(content) = &custom_content {
-        content.lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty() && !l.starts_with('#'))
-            .collect()
-    } else {
-        default_patterns.to_vec()
-    };
-
-    for p in &patterns {
-        if let Ok(re) = regex::Regex::new(p) {
-            cleaned = re.replace_all(&cleaned, "").to_string();
+    if let Ok(content) = fs::read_to_string(&custom_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Ok(re) = regex::Regex::new(line) {
+                cleaned = re.replace_all(&cleaned, "").to_string();
+            }
         }
     }
 
-    cleaned = cleaned.split_whitespace()
+    cleaned.split_whitespace()
         .filter(|word| !IGNORE_WORDS.iter().any(|w| w.eq_ignore_ascii_case(word)))
         .collect::<Vec<_>>()
-        .join(" ");
-
-    cleaned
+        .join(" ")
 }
 
 /// List of available whisper models: (name, filename, size_label, vram, speed, quality)
