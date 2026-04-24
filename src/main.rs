@@ -235,7 +235,7 @@ fn clean_whisper_text(text: &str) -> String {
     let mut cleaned = text.to_string();
     cleaned = re_brackets.replace_all(&cleaned, "").to_string();
     cleaned = re_asterisks.replace_all(&cleaned, "").to_string();
-    cleaned = re_dots.replace_all(&cleaned, "").to_string();
+    cleaned = re_dots.replace_all(&cleaned, " ").to_string();
 
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let custom_path = format!("{}/.config/dictaway/filters", home);
