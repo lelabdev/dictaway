@@ -62,6 +62,23 @@ fn read_config() -> Option<String> {
     None
 }
 
+fn read_model_config() -> Option<String> {
+    let path = config_path();
+    let content = fs::read_to_string(&path).ok()?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            if key.trim() == "model" {
+                return Some(value.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -101,7 +118,7 @@ fn run(model_override: Option<String>, device: &str, lang_override: Option<Strin
     // Resolve which model to use
     let model_path = match model_override {
         Some(p) => p,
-        None => resolve_model(&model_dir),
+        None => resolve_model(&model_dir, read_model_config()),
     };
 
     // Download if missing
@@ -259,15 +276,37 @@ fn clean_whisper_text(text: &str) -> String {
 
 /// List of available whisper models: (name, filename, size_label, vram, speed, quality)
 const MODELS: &[(&str, &str, &str, &str, &str, &str)] = &[
-    ("tiny",     "ggml-tiny.bin",     "75 MB",  "< 1 GB", "⚡⚡⚡", "Basic"),
-    ("base",     "ggml-base.bin",     "142 MB", "~1 GB",  "⚡⚡",  "Decent"),
-    ("small",    "ggml-small.bin",    "466 MB", "~2 GB",  "⚡",    "Good"),
-    ("medium",   "ggml-medium.bin",   "1.5 GB", "~5 GB",  "Slow",  "Very good"),
-    ("large-v3", "ggml-large-v3.bin", "2.9 GB", "~10 GB", "V slow","Excellent"),
+    ("tiny",     "ggml-tiny.bin",          "75 MB",   "< 1 GB",  "⚡⚡⚡", "Basic"),
+    ("base",     "ggml-base.bin",          "142 MB",  "~1 GB",   "⚡⚡",   "Decent"),
+    ("small",    "ggml-small.bin",         "466 MB",  "~2 GB",   "⚡",     "Good"),
+    ("medium",   "ggml-medium.bin",        "1.5 GB",  "~5 GB",   "Slow",   "Very good"),
+    ("large-v3-turbo", "ggml-large-v3-turbo.bin", "1.5 GB", "~8 GB", "Fast",  "Excellent"),
+    ("large-v3", "ggml-large-v3.bin",      "2.9 GB",  "~10 GB",  "V slow", "Excellent"),
 ];
 
 /// Find an existing model, or run first-time setup to pick one.
-fn resolve_model(model_dir: &str) -> String {
+fn resolve_model(model_dir: &str, config_model: Option<String>) -> String {
+    // If model is specified in config or CLI, check if it exists
+    if let Some(model_name) = config_model {
+        for (name, filename, _, _, _, _) in MODELS {
+            if *name == model_name {
+                let path = format!("{}/{}", model_dir, filename);
+                if Path::new(&path).exists() {
+                    return path;
+                } else {
+                    // Model specified but not found — download it
+                    eprintln!("🎤 Model '{}' configured, downloading...\n", name);
+                    download_model(&path);
+                    if Path::new(&path).exists() {
+                        return path;
+                    }
+                    // Download failed, continue to fallback
+                }
+            }
+        }
+        eprintln!("⚠️  Unknown model name '{}', using existing model\n", model_name);
+    }
+
     // Check if any model already exists
     for (_, filename, _, _, _, _) in MODELS {
         let path = format!("{}/{}", model_dir, filename);
