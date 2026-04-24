@@ -195,10 +195,10 @@ fn run(model_override: Option<String>, device: &str, lang_override: Option<Strin
     if let Some(remaining) = capture.get_remaining(offset) {
         if remaining.len() > TARGET_RATE / 2 {
             if let Some(text) = transcriber.transcribe(&remaining) {
-                let text = text.trim();
+                let text = clean_whisper_text(&text);
                 if !text.is_empty() {
                     println!("📝 {}", text);
-                    typer::type_text(text);
+                    typer::type_text(&text);
                 }
             }
         }
@@ -215,8 +215,46 @@ fn cleanup() {
 }
 
 fn clean_whisper_text(text: &str) -> String {
-    let re = regex::Regex::new(r"\*[^*]+\*|\[[^\]]+\]|\.{2,}|…|BLANK_AUDIO|blank_audio").unwrap();
-    re.replace_all(text, " ").split_whitespace().collect::<Vec<_>>().join(" ")
+    const IGNORE_WORDS: &[&str] = &[
+        "Musique",
+        "Music",
+        "Bruit",
+        "Noise",
+        "Applaudissements",
+        "Applause",
+        "Rires",
+        "Laughter",
+        "BLANK_AUDIO",
+        "blank_audio",
+    ];
+
+    let re_brackets = regex::Regex::new(r"\[[^\]]*\]").unwrap();
+    let re_asterisks = regex::Regex::new(r"\*[^*]+\*").unwrap();
+    let re_dots = regex::Regex::new(r"(\.{2,}|…+)").unwrap();
+
+    let mut cleaned = text.to_string();
+    cleaned = re_brackets.replace_all(&cleaned, "").to_string();
+    cleaned = re_asterisks.replace_all(&cleaned, "").to_string();
+    cleaned = re_dots.replace_all(&cleaned, " ").to_string();
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let custom_path = format!("{}/.config/dictaway/filters", home);
+    if let Ok(content) = fs::read_to_string(&custom_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Ok(re) = regex::Regex::new(line) {
+                cleaned = re.replace_all(&cleaned, "").to_string();
+            }
+        }
+    }
+
+    cleaned.split_whitespace()
+        .filter(|word| !IGNORE_WORDS.iter().any(|w| w.eq_ignore_ascii_case(word)))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// List of available whisper models: (name, filename, size_label, vram, speed, quality)
