@@ -216,7 +216,7 @@ fn cleanup() {
 
 fn clean_whisper_text(text: &str) -> String {
     let re = regex::Regex::new(r"\*[^*]+\*|\[[^\]]+\]|\.{2,}|…|BLANK_AUDIO|blank_audio").unwrap();
-    re.replace_all(text, "").split_whitespace().collect::<Vec<_>>().join(" ")
+    re.replace_all(text, " ").split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// List of available whisper models: (name, filename, size_label, vram, speed, quality)
