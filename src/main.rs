@@ -232,7 +232,8 @@ fn cleanup() {
 }
 
 fn clean_whisper_text(text: &str) -> String {
-    const IGNORE_WORDS: &[&str] = &[
+    // 1. Filtres INTERNES (hardcodés, toujours actifs)
+    const INTERNAL_IGNORE: &[&str] = &[
         "Musique",
         "Music",
         "Bruit",
@@ -245,15 +246,24 @@ fn clean_whisper_text(text: &str) -> String {
         "blank_audio",
     ];
 
+    // 2. Regex internes (brackets, asterisks, ellipsis)
     let re_brackets = regex::Regex::new(r"\[[^\]]*\]").unwrap();
     let re_asterisks = regex::Regex::new(r"\*[^*]+\*").unwrap();
     let re_dots = regex::Regex::new(r"(\.{2,}|…+)").unwrap();
 
+    // Appliquer filtres internes
     let mut cleaned = text.to_string();
     cleaned = re_brackets.replace_all(&cleaned, "").to_string();
     cleaned = re_asterisks.replace_all(&cleaned, "").to_string();
     cleaned = re_dots.replace_all(&cleaned, " ").to_string();
 
+    // Filtrer mots internes
+    cleaned = cleaned.split_whitespace()
+        .filter(|word| !INTERNAL_IGNORE.iter().any(|w| w.eq_ignore_ascii_case(word)))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // 3. Filtres PERSONNALISÉS (fichier externe)
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let custom_path = format!("{}/.config/dictaway/filters", home);
     if let Ok(content) = fs::read_to_string(&custom_path) {
@@ -268,10 +278,8 @@ fn clean_whisper_text(text: &str) -> String {
         }
     }
 
-    cleaned.split_whitespace()
-        .filter(|word| !IGNORE_WORDS.iter().any(|w| w.eq_ignore_ascii_case(word)))
-        .collect::<Vec<_>>()
-        .join(" ")
+    // Nettoyer les espaces doubles
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// List of available whisper models: (name, filename, size_label, vram, speed, quality)
