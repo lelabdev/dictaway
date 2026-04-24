@@ -1,0 +1,14 @@
+[Unit]
+Description=Dictaway Voice Dictation
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/dictaway
+Restart=on-failure
+RestartSec=5
+KillMode=process
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
